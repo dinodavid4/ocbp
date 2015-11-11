@@ -55,6 +55,8 @@
  * Note: cpumask and cpupool is supported.
  */
 
+#define NO_OF_VCPUS 3
+
 /*
  * Default parameters: Period and budget in default is 10 and 4 ms, respectively
  */
@@ -183,7 +185,7 @@ rt_dump_vcpu(struct rt_vcpu *svc)
 		return;
 	}
 	cpumask_scnprintf(cpustr, sizeof(cpustr), svc->vcpu->cpu_hard_affinity);
-	printk("OCBP:_dumpP: [%5d.%-2d] cpu %d, Period %"PRId64", Budget_low %"PRId64", Budget_high %"PRId64", Deadline %"PRId64",Criticality %d,Offline_flag %d, cur_b=%"PRId64" cur_d=%"PRId64" last_start=%"PRId64" onR=%d runnable=%d cpu_hard_affinity=%s ",
+	printk("OCBP:_dumpP: [%5d.%-2d] cpu %d, Period %"PRId64", Budget_low %"PRId64", Budget_high %"PRId64", Deadline %"PRId64",Criticality %d,Offline_flag %d, cur_b=%"PRId64" cur_d=%"PRId64" last_start=%"PRId64" onR=%d runnable=%d cpu_hard_affinity=%s",
 			svc->vcpu->domain->domain_id,
 			svc->vcpu->vcpu_id,
 			svc->vcpu->processor,
@@ -268,6 +270,120 @@ __runq_remove(struct rt_vcpu *svc)
 		list_del_init(&svc->runq_elem);
 }
 
+struct vcpu_stack {
+	struct rt_vcpu vcpu_data;
+	struct vcpu_stack * next_vcpu;
+};
+
+struct vcpu_stack *first_vcpu = NULL, *temp;
+int global_flag = 0;
+
+int updateQueue(struct rt_vcpu vcpu_queue) 
+{
+	//LIFO is considered because the vcpu with lowest priority is pushed into the stack one by one
+	//printk("Deadline Time = %ld\n",vcpu_queue.deadline);
+	
+	//struct rt_private *prv = xzalloc(struct rt_private);
+
+	//temp = kmalloc(sizeof(struct vcpu_stack), GFP_KERNEL);
+	temp = xzalloc(struct vcpu_stack);
+	temp->vcpu_data = vcpu_queue;
+	temp->next_vcpu = first_vcpu;
+	first_vcpu = temp;
+	return 0;
+}
+
+
+int calculatePriority(struct rt_vcpu * vcpu_to_schedule) 
+{
+	int count;
+	int loop_count = 0;
+	int j_fxd_index;
+	int vcpu_index;
+	s_time_t total_wcet_time = 0; 
+	global_flag = 1;
+
+	for(j_fxd_index = 0; j_fxd_index < NO_OF_VCPUS ; j_fxd_index++) {
+		for(vcpu_index = 0; vcpu_index < (NO_OF_VCPUS-loop_count) ; vcpu_index++) {
+
+			if(vcpu_to_schedule[vcpu_index].criticality_vcpu == HIGH_CRITICALITY) {
+				//printk("Entered HIGH Criticality\n");
+
+				/* Check if the current vcpu can be assigned with LOW Priority*/
+				for(count = vcpu_index + 1; count < (NO_OF_VCPUS-loop_count) ; count++) {
+					total_wcet_time += vcpu_to_schedule[count].budget_high;
+				}
+				for(count = vcpu_index - 1; count >= 0; count--) {
+					total_wcet_time += vcpu_to_schedule[count].budget_high;
+				}
+
+				if(total_wcet_time >= vcpu_to_schedule[vcpu_index].deadline) {
+					//No time to execute the current vcpu
+					//printk("Job %d cannot be assigned Low Priority\n", vcpu_index);	
+				}
+				else {
+					//if(((vcpu_to_schedule[vcpu_index].deadline - total_wcet_time) - vcpu_to_schedule[vcpu_index].release) 
+					if(((vcpu_to_schedule[vcpu_index].deadline - total_wcet_time)) 
+							>= vcpu_to_schedule[vcpu_index].budget_high) {
+						//printk("OCBP:_Cal: Job %d is assigned Low Priority\n", vcpu_index);	
+						updateQueue(vcpu_to_schedule[vcpu_index]);
+						break;
+					}
+					else {
+						//printk("Job %d cannot be assigned Low Priority\n", vcpu_index);	
+					}
+				}
+				//printk("Total WCET time = %ld\n", total_wcet_time);
+				total_wcet_time = 0;
+
+			}
+			else {
+				//printk("Entered LOW Criticality\n");
+
+				/* Check if the current vcpu can be assigned with LOW Priority*/
+				for(count = vcpu_index + 1; count < (NO_OF_VCPUS-loop_count) ; count++) {
+					total_wcet_time += vcpu_to_schedule[count].budget_low;
+				}
+				for(count = vcpu_index - 1; count >= 0; count--) {
+					total_wcet_time += vcpu_to_schedule[count].budget_low;
+				}
+
+				if(total_wcet_time >= vcpu_to_schedule[vcpu_index].deadline) {
+					//No time to execute the current vcpu
+					//printk("Job %d cannot be assigned Low Priority\n", vcpu_index);	
+				}
+				else {
+					//if(((vcpu_to_schedule[vcpu_index].deadline - total_wcet_time)- vcpu_to_schedule[vcpu_index].release) 
+					if(((vcpu_to_schedule[vcpu_index].deadline - total_wcet_time)) 
+							>= vcpu_to_schedule[vcpu_index].budget_low) {
+						//printk("OCBP:_Cal: Job %d is assigned Low Priority\n", vcpu_index);	
+						updateQueue(vcpu_to_schedule[vcpu_index]);
+						break;
+					}
+					else {
+						//printk("Job %d cannot be assigned Low Priority\n", vcpu_index);	
+					}
+				}
+				//printk("Total WCET time = %ld\n", total_wcet_time);
+			}	
+			total_wcet_time = 0;
+		}
+		/* Shifting the array index */
+		if(vcpu_index == (NO_OF_VCPUS -1 -loop_count)) {
+			/* No need to shift the arrays because of the last element*/
+		}
+		else {
+			for(count = vcpu_index; count < (NO_OF_VCPUS-1-loop_count); count++) {
+				vcpu_to_schedule[count] = vcpu_to_schedule[count+1];
+			}
+		}
+		total_wcet_time = 0;
+		loop_count++;
+		printk("loop count %d\n", loop_count);
+	}
+	return 0;
+}
+
 /*
  * Insert a vcpu in the RunQ based on vcpus' deadline: 
  * EDF schedule policy: vcpu with smaller deadline has higher priority;
@@ -281,9 +397,12 @@ __runq_insert(const struct scheduler *ops, struct rt_vcpu *svc)
 	struct list_head *runq = RUNQ(ops);
 	struct list_head *iter;
 	spinlock_t *schedule_lock;
-	struct rt_vcpu local_vcpu[11];
-	int loop_index = 0;
-	int lcl_flag = 1;
+	//struct rt_vcpu local_vcpu[11];
+	//int loop_index = 0;
+	//int lcl_flag = 1;
+	//int loop_count = 0;
+	//struct rt_vcpu vcpu_prioritized[11];
+	
 
 	schedule_lock = per_cpu(schedule_data, svc->vcpu->processor).schedule_lock;
 	ASSERT( spin_is_locked(schedule_lock) );
@@ -298,16 +417,30 @@ __runq_insert(const struct scheduler *ops, struct rt_vcpu *svc)
 	/* OCBP Implementation */
 	//list_add_tail(&svc->runq_elem, runq);
 
+/*
 	if(lcl_flag == 1)
 	{
 		
-		local_vcpu[loop_index] = *iter_svc;
+		local_vcpu[loop_index] = *svc;
 		loop_index++;
 		if(loop_index == 3)
 		{
-			printk("Calculate Priority here\n");		
-			lcl_flag == 1	
+			printk("OCBP:_Cal:Calculate Priority here\n");		
+			calculatePriority(local_vcpu);
+			while(first_vcpu != NULL)
+			{
+				//memcpy(&vcpu_prioritized[loop_count], first_vcpu, sizeof(struct vcpu_stack));
+				vcpu_prioritized[loop_count] = first_vcpu->vcpu_data;
+				printk("OCBP:_Cal: Deadline Time = %ld Deadline Time from Prioritized Job %ld\n",
+					first_vcpu->vcpu_data.deadline, vcpu_prioritized[loop_count].deadline);
+				first_vcpu = first_vcpu->next_vcpu;
+				loop_count++;
+			}
+
+			lcl_flag = 0;	
 		}
+		//printk("OCBP:_run%d ", loop_index);
+*/
 		/*
 		list_for_each(iter, runq) 
 		{
@@ -316,7 +449,7 @@ __runq_insert(const struct scheduler *ops, struct rt_vcpu *svc)
 			loop_index++;
 		}
 		*/
-	}
+	//}
 	//printk("OCBP:runq_insert %d ", loop_index);
 
 	/* End */
@@ -551,6 +684,7 @@ rt_free_vdata(const struct scheduler *ops, void *priv)
 rt_vcpu_insert(const struct scheduler *ops, struct vcpu *vc)
 {
 	struct rt_vcpu *svc = RT_VCPU(vc);
+	//struct rt_vcpu local_vcpu[3];
 
 	/* Debug only: dump info of vcpu to insert */
 	printtime();
@@ -559,6 +693,7 @@ rt_vcpu_insert(const struct scheduler *ops, struct vcpu *vc)
 	/* not addlocate idle vcpu to dom vcpu list */
 	if ( is_idle_vcpu(vc) )
 		return;
+		
 
 	list_add_tail(&svc->sdom_elem, &svc->sdom->vcpu);   /* add to dom vcpu list */
 }
@@ -733,6 +868,8 @@ __repl_update(const struct scheduler *ops, s_time_t now)
 			count = (diff/MICROSECS(svc->period)) + 1;
 			svc->cur_deadline += count * MICROSECS(svc->period);
 			svc->cur_budget = svc->budget_low * 1000;
+
+			//printk("OCBP:1 ");
 			__runq_remove(svc);
 			__runq_insert(ops, svc);
 		}
@@ -960,6 +1097,7 @@ rt_vcpu_wake(const struct scheduler *ops, struct vcpu *vc)
 		svc->cur_budget = svc->budget_low * 1000;
 	}
 
+	//printk("OCBP:3 ");
 	__runq_insert(ops, svc);
 	__repl_update(ops, now);
 	snext = __runq_pick(ops, prv->cpus);    /* pick snext from ALL valid cpus */
@@ -988,6 +1126,8 @@ rt_context_saved(const struct scheduler *ops, struct vcpu *vc)
 	if ( test_and_clear_bit(__RT_delayed_runq_add, &svc->flags) && 
 			likely(vcpu_runnable(vc)) ) 
 	{
+
+		//printk("OCBP:2 ");
 		__runq_insert(ops, svc);
 		__repl_update(ops, NOW());
 		snext = __runq_pick(ops, prv->cpus);    /* pick snext from ALL cpus */
@@ -1011,6 +1151,10 @@ rt_dom_cntl(
 	struct list_head *iter;
 	int vcpu_index = 0;
 	int rc = -EINVAL;
+	int loop_count = 0;
+	static int loop_index = 0;
+	struct rt_vcpu local_vcpu[3];
+	struct rt_vcpu vcpu_prioritized[3];
 
 	switch ( op->cmd )
 	{
@@ -1061,10 +1205,12 @@ rt_dom_cntl(
 					if ( vcpu_index < 0 ) 
 						printk("OCBP:XEN_DOMCTL_SCHEDOP_putinfo: vcpu_index=%d\n",
 								vcpu_index);
-					else
+					else {
 						printk("OCBP:XEN_DOMCTL_SCHEDOP_putinfo: "
 								"vcpu_index=%d,period=%"PRId64",budget_low=%"PRId64",budget_high=%"PRId64",deadline=%"PRId64"\n",
 								vcpu_index, op->u.rt.period, op->u.rt.budget_low, op->u.rt.budget_high,op->u.rt.deadline);
+						
+					}
 
 					svc->period = op->u.rt.period;
 					svc->budget_low = op->u.rt.budget_low;
@@ -1072,6 +1218,31 @@ rt_dom_cntl(
 					svc->deadline = op->u.rt.deadline;
 					svc->criticality_vcpu = op->u.rt.criticality_vcpu;
 					svc->offl_flag = op->u.rt.offl_flag;
+					if ( vcpu_index >= 0 ) 
+					{
+						printk("OBCP:1 LI %d VI %d  ", loop_index, vcpu_index);
+						local_vcpu[loop_index] = *svc;
+						if(loop_index == 2)
+						{
+							printk("OCBP:_Cal:Calculate Priority here\n");		
+							calculatePriority(local_vcpu);
+							while(first_vcpu != NULL)
+							{
+								//memcpy(&vcpu_prioritized[loop_count], first_vcpu, sizeof(struct vcpu_stack));
+								vcpu_prioritized[loop_count] = first_vcpu->vcpu_data;
+								printk("OCBP:_Cal: Deadline Time = %ld Deadline Time from Prioritized Job %ld\n",
+									first_vcpu->vcpu_data.deadline, vcpu_prioritized[loop_count].deadline);
+								first_vcpu = first_vcpu->next_vcpu;
+								loop_count++;
+							}
+
+
+							loop_index = 0;
+						}
+						loop_index++;
+					}
+
+
 
 					break;
 				}
