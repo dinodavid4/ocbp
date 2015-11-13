@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-#define NO_OF_VCPUS			11	
+#define NO_OF_VCPUS			3	
 #define LOW_CRITICALITY			0
 #define HIGH_CRITICALITY		1
 
@@ -41,26 +41,26 @@ int updateQueue(struct rtmixcrit_vcpu vcpu_queue)
 
 int getJobData(struct rtmixcrit_vcpu * vcpu_to_schedule) 
 {
-	vcpu_to_schedule[0].period 		= 8;
+	vcpu_to_schedule[0].period 		= 8000;
 	vcpu_to_schedule[0].release   		= 0;
-	vcpu_to_schedule[0].deadline  		= 4;
+	vcpu_to_schedule[0].deadline  		= 4000;
 	vcpu_to_schedule[0].criticality_vcpu    = 0;
-	vcpu_to_schedule[0].budget_low  	= 2;
-	vcpu_to_schedule[0].budget_high 	= 2;
+	vcpu_to_schedule[0].budget_low  	= 2000;
+	vcpu_to_schedule[0].budget_high 	= 2000;
 
-	vcpu_to_schedule[1].period 		= 10;
+	vcpu_to_schedule[1].period 		= 10000;
 	vcpu_to_schedule[1].release   		= 0;
-	vcpu_to_schedule[1].deadline  		= 5;
+	vcpu_to_schedule[1].deadline  		= 5000;
 	vcpu_to_schedule[1].criticality_vcpu    = 1;
-	vcpu_to_schedule[1].budget_low  	= 2;
-	vcpu_to_schedule[1].budget_high		= 4;
+	vcpu_to_schedule[1].budget_low  	= 2000;
+	vcpu_to_schedule[1].budget_high		= 4000;
 
-	vcpu_to_schedule[2].period 		= 20;
+	vcpu_to_schedule[2].period 		= 20000;
 	vcpu_to_schedule[2].release   		= 0;
-	vcpu_to_schedule[2].deadline  		= 10;
+	vcpu_to_schedule[2].deadline  		= 10000;
 	vcpu_to_schedule[2].criticality_vcpu    = 1;
-	vcpu_to_schedule[2].budget_low  	= 2;
-	vcpu_to_schedule[2].budget_high 	= 4;
+	vcpu_to_schedule[2].budget_low  	= 2000;
+	vcpu_to_schedule[2].budget_high 	= 4000;
 	/*
 
 	   vcpu_to_schedule[3].release   		= 0;//8;
@@ -287,7 +287,7 @@ int main()
 
 	getJobData(vcpu_to_schedule);	
 
-	findInstance(vcpu_to_schedule, no_of_vcpu);
+	//findInstance(vcpu_to_schedule, no_of_vcpu);
 
 	calculatePriority(vcpu_to_schedule);//Computes the priority and updates the Queue as per the priority
 	while(first_vcpu != NULL)
